@@ -1,16 +1,15 @@
-import os
-import requests
+import base64
 import json
-import time
-import sys
-import threading
 import math
 import opencc
-import base64
+import os
+import requests
+import sys
+import threading
+import time
 
 from fire import Fire
 from joblib import Parallel, delayed, cpu_count
-from pprint import pprint
 from prettytable import PrettyTable
 from requests.adapters import HTTPAdapter
 from threading import Thread
