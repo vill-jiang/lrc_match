@@ -11,9 +11,9 @@ SYNOPSIS
     lrc_match.py <flags>
 
 FLAGS
-    --music_dir=MUSIC_DIR  音乐文件夹，默认为当前目录
-    --music_file=MUSIC_FILE  指定某个音乐文件
-    --force=FORCE  强制覆盖已有lrc歌词文件
+    --music_dir=MUSIC_DIR  # str音乐文件夹，默认为当前目录
+    --music_file=MUSIC_FILE  # str 指定某个音乐文件
+    --force=FORCE  # bool 强制覆盖已有lrc歌词文件
 ```
 
 网易云音乐使用 API: http://www.hjmin.com
