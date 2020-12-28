@@ -3,3 +3,4 @@ OpenCC==1.1.1
 fire==0.3.1
 joblib==0.17.0
 prettytable==2.0.0
+fuzzywuzzy==0.18.0
