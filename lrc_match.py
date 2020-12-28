@@ -9,10 +9,12 @@ import threading
 import time
 
 from fire import Fire
+from fuzzywuzzy import fuzz
 from joblib import Parallel, delayed, cpu_count
 from prettytable import PrettyTable
 from requests.adapters import HTTPAdapter
 from threading import Thread
+from typing import List, Union
 
 class LrcDownloader(object):
     format_list = ['.mp3', '.flac', '.ape', '.wav', '.m4a']
@@ -29,48 +31,61 @@ class LrcDownloader(object):
             if filename.lower().endswith(f):
                 return f
         return None
-
-    def singer_song_comp(self, singer: str = None, song: str = None):
-        cc = opencc.OpenCC('t2s')
-        if singer is None:
-            is_singer = True
+    
+    def get_best_index(self, singers: List[Union[List, str]], songs: List[str]):
+        # return best_index, best_name, best_score
+        if len(singers) != len(songs):
+            return None
+        if (not isinstance(singers, list)) or (not isinstance(songs, list)):
+            return None
+        if len(singers) == 0:
+            return None
+        cc = opencc.OpenCC()
+        if self.singer is not None and self.song is not None:
+            target_name = cc.convert('{} - {}'.format(self.singer, self.song))
         else:
-            if ((cc.convert(singer.lower()) in cc.convert(self.singer.lower())) or 
-                (cc.convert(self.singer.lower()) in cc.convert(singer.lower()))):
-                is_singer = True
+            target_name = self.singer or self.song
+        if target_name is None:
+            return 0, None, 0
+        score = [0] * len(singers)
+        names = [None] * len(singers)
+        for i in range(len(singers)):
+            a_song = str(songs[i])
+            if isinstance(singers[i], str):
+                a_singer = singers[i]
+            elif isinstance(singers[i], list):
+                a_singer = '、'.join(singers[i])
             else:
-                is_singer = False
-        if song is None:
-            is_song = True
-        else:
-            if ((cc.convert(song.lower()) in cc.convert(self.song.lower())) or 
-                (cc.convert(self.song.lower()) in cc.convert(song.lower()))):
-                is_song = True
-            else:
-                is_song = False
-        return is_singer and is_song
+                a_singer = str(singers[i])
+            obj_name = cc.convert('{} - {}'.format(a_singer, a_song))
+            score[i] = fuzz.token_set_ratio(target_name, obj_name) + fuzz.token_sort_ratio(target_name, obj_name)
+            names[i] = obj_name
+        max_index = 0
+        max_score = score[0]
+        for i, s in enumerate(score):
+            if s > max_score:
+                max_score = s
+                max_index = i
+        return max_index, names[max_index], score[max_index]
 
     def __init__(self, music_filename: str):
         self.music_filename = music_filename
         self.base_name = os.path.basename(self.music_filename)
         self.music_dir = os.path.dirname(self.music_filename)
-        self.format = None
-        for f in LrcDownloader.format_list:
-            l = len(f)
-            if self.base_name.lower().endswith(f):
-                self.base_name = self.base_name[:-l]
-                self.lrc_name = self.base_name + '.lrc'
-                self.format = f
-                break
+        self.format = LrcDownloader.support_format(self.base_name)
+        if self.format is None:
+            ValueError(f'input file {music_filename} is a music file that don\'t support.')
+        self.base_name = self.base_name[:-len(self.format)]
+        self.lrc_name = self.base_name + '.lrc'
+        self.best_name = None
         try:
-            self.singer, self.song = self.base_name.split('-')
-            self.singer = self.singer.strip()
-            self.song = self.song.strip()
+            s = self.base_name.split('-')
+            s = [i.strip() for i in s]
+            self.singer = s[0]
+            self.song = ' '.join(s[1:])
         except Exception as e:
             self.singer = None
             self.song = None
-        if self.format is None:
-            ValueError(f'input file {music_filename} is a music file that don\'t support.')
 
     def search(self):
         NotImplementedError('search NotImplementedError')
@@ -97,19 +112,26 @@ class LrcDownloaderNetease(LrcDownloader):
         s.mount('http://', HTTPAdapter(max_retries=5))
         s.mount('https://', HTTPAdapter(max_retries=5))
         req = s.get('http://www.hjmin.com/search', 
-                    params={'keywords': self.song or self.base_name}, 
+                    params={'keywords': self.base_name,
+                            'limit': 100}, 
                     headers=LrcDownloader.headers, 
                     timeout=None)
         resp = req.json()
 
         try:
-            if self.singer is not None:
-                for x in resp['result']['songs']:
-                    for artist in x['artists']:
-                        if self.singer_song_comp(singer=artist['name']):
-                            return x['id']
-                return resp['result']['songs'][0]['id']
-            return resp['result']['songs'][0]['id']
+            ids = []
+            songs = []
+            singers = []
+            for x in resp['result']['songs']:
+                ids.append(x['id'])
+                songs.append(x['name'])
+                tmp = []
+                for artist in x['artists']:
+                    tmp.append(artist['name'])
+                singers.append(tmp if len(tmp) > 0 else '')
+            best_index, best_name, best_score = self.get_best_index(singers=singers, songs=songs)
+            self.best_name = best_name
+            return ids[best_index]
         except:
             return None
     
@@ -135,22 +157,25 @@ class LrcDownloaderKugou(LrcDownloader):
         s.mount('https://', HTTPAdapter(max_retries = 5))
         req = s.get('http://mobileservice.kugou.com/api/v3/lyric/search', 
                     params={'version': 9108, 
-                            'highlight': 1,
                             'keyword': self.base_name,
-                            'plat': 0}, 
+                            'plat': 0,
+                            'pagesize': 100}, 
                     headers=LrcDownloader.headers, 
                     timeout=None)
         resp = req.json()
 
-        hash = None
         try:
-            hash = resp['data']['info'][0]['hash']
-            if self.singer is not None:
-                for x in resp['data']['info']:
-                    if self.singer_song_comp(singer=x['singername']):
-                        hash = x['hash']
-                        break
-            return hash
+            infos = []
+            songs = []
+            singers = []
+            for x in resp['data']['info']:
+                infos.append((x['filename'], x['hash']))
+                s = x['filename'].split(' - ')
+                songs.append(s[1])
+                singers.append(x['singername'])
+            best_index, best_name, best_score = self.get_best_index(singers=singers, songs=songs)
+            self.best_name = best_name
+            return infos[best_index]
         except:
             return None
     
@@ -162,34 +187,35 @@ class LrcDownloaderKugou(LrcDownloader):
                   params={'ver': 1,
                           'man': 'yes',
                           'client': 'pc', 
-                          'keyword': self.base_name,
-                          'hash': info}, 
+                          'keyword': info[0],
+                          'hash': info[1]}, 
                   timeout=None)
         resp = r.json()
         
         id = None
         key = None
         try:
-            id = resp['candidates'][0]['id']
-            key = resp['candidates'][0]['accesskey']
-            if self.singer is not None and self.song is not None:
-                for x in resp['candidates']:
-                    if self.singer_song_comp(singer=x['singer'], song=x['song']):
-                        id = x['id']
-                        key = x['accesskey']
-                        break
+            id_keys = []
+            songs = []
+            singers = []
+            for x in resp['candidates']:
+                id_keys.append((x['id'], x['accesskey']))
+                songs.append(x['song'])
+                singers.append(x['singer'])
+            best_index, best_name, best_score = self.get_best_index(singers=singers, songs=songs)
+            id, key = id_keys[best_index]
         except:
             return None
 
         if id is not None and key is not None:
             r = s.get('http://lyrics.kugou.com/download', 
-                    params={'ver': 1,
-                            'client': 'pc', 
-                            'id': id,
-                            'accesskey': key,
-                            'fmt': 'lrc',
-                            'charset': 'utf8'}, 
-                    timeout=None)
+                      params={'ver': 1,
+                              'client': 'pc', 
+                              'id': id,
+                              'accesskey': key,
+                              'fmt': 'lrc',
+                              'charset': 'utf8'}, 
+                      timeout=None)
             resp = r.json()
             try:
                 lrc = base64.b64decode(resp['content']).decode('utf-8')
@@ -203,18 +229,27 @@ class LrcDownloaderQQ(LrcDownloader):
         s.mount('http://', HTTPAdapter(max_retries = 5))
         s.mount('https://', HTTPAdapter(max_retries = 5))
         r = s.get('https://c.y.qq.com/soso/fcgi-bin/client_search_cp', 
-                  params={'w': self.base_name, 'format': 'json'}, 
+                  params={'w': self.base_name, 
+                          'format': 'json',
+                          'n': 60}, 
                   timeout=None, 
                   headers=LrcDownloader.headers)
         resp = r.json()
 
         try:
-            if self.singer is not None and self.song is not None:
-                for x in resp['data']['song']['list']:
-                    for singer_r in x['singer']:
-                        if self.singer_song_comp(singer=singer_r['name'], song=x['songname']):
-                            return x['songmid']
-            return resp['data']['song']['list'][0]['songmid']
+            songmids = []
+            songs = []
+            singers = []
+            for x in resp['data']['song']['list']:
+                songmids.append(x['songmid'])
+                songs.append(x['songname'])
+                tmp = []
+                for artist in x['singer']:
+                    tmp.append(artist['name'])
+                singers.append(tmp if len(tmp) > 0 else '')
+            best_index, best_name, best_score = self.get_best_index(singers=singers, songs=songs)
+            self.best_name = best_name
+            return songmids[best_index]
         except:
             return None
 
@@ -238,24 +273,27 @@ class LrcDownloaderQQ(LrcDownloader):
         except:
             return None
 
-def download_lrc(music_file):
+def download_lrc(music_file, only_search):
+    downloaders = [('酷狗', LrcDownloaderKugou), 
+                   ('QQ', LrcDownloaderQQ),
+                   ('网易', LrcDownloaderNetease)]
     if os.path.exists(music_file):
-        ld = LrcDownloaderKugou(music_file)
-        if ld.download_lrc():
-            return '酷狗'
-        ld = LrcDownloaderQQ(music_file)
-        if ld.download_lrc():
-            return 'QQ'
-        ld = LrcDownloaderNetease(music_file)
-        if ld.download_lrc():
-            return '网易'
-        return '\033[31m失败\033[0m'
+        for downloader_name, c in downloaders:
+            ld = c(music_file)
+            if only_search:
+                if ld.search() is not None:
+                    return downloader_name + '_s', ld.best_name
+            else:
+                if ld.download_lrc():
+                    return downloader_name, ld.best_name
+        return '\033[31m失败\033[0m', ''
     else:
-        return '\033[31m无此文件\033[0m'
+        return '\033[31m无此文件\033[0m', ''
 
 def main(music_dir = '.', 
          music_file = None,
-         force = False):
+         force = False, 
+         only_search = False):
     music_files = []
     if music_file is not None:
         if isinstance(music_file, str):
@@ -271,12 +309,13 @@ def main(music_dir = '.',
                         music_file = os.path.join(root, file)
                         music_files.append(music_file)
     rs = Parallel(n_jobs=2 * cpu_count(), prefer='threads', verbose=1)(
-            delayed(download_lrc)(f)
+            delayed(download_lrc)(f, only_search)
             for f in music_files
         )
     tb = PrettyTable()
-    tb.add_column('文件', music_files, align='l')
-    tb.add_column('状态', rs)
+    tb.add_column('文件名', music_files, align='l')
+    tb.add_column('状态', [i[0] for i in rs])
+    tb.add_column('匹配名', [i[1] for i in rs], align='l')
     print(tb)
 
 if __name__ == '__main__':
