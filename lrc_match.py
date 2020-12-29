@@ -58,7 +58,7 @@ class LrcDownloader(object):
             else:
                 a_singer = str(singers[i])
             obj_name = cc.convert('{} - {}'.format(a_singer, a_song))
-            score[i] = fuzz.token_set_ratio(target_name, obj_name) + fuzz.token_sort_ratio(target_name, obj_name)
+            score[i] = (fuzz.token_set_ratio(target_name, obj_name) + fuzz.token_sort_ratio(target_name, obj_name)) / 2
             names[i] = obj_name
         max_index = 0
         max_score = score[0]
@@ -78,6 +78,7 @@ class LrcDownloader(object):
         self.base_name = self.base_name[:-len(self.format)]
         self.lrc_name = self.base_name + '.lrc'
         self.best_name = None
+        self.best_name_score = 0.
         try:
             s = self.base_name.split('-')
             s = [i.strip() for i in s]
@@ -93,18 +94,23 @@ class LrcDownloader(object):
     def get_lrc(self, info):
         NotImplementedError('get_lrc NotImplementedError')
 
-    def download_lrc(self, lrc_dir = None):
-        if lrc_dir is None:
-            lrc_dir = self.music_dir
+    def download_lrc(self):
         info = self.search()
 
         if info is not None:
             lrc_text = self.get_lrc(info)
-            if lrc_text is not None:
-                with open(os.path.join(lrc_dir, self.lrc_name), 'w', encoding='utf-8') as f:
-                    f.write(lrc_text)
-                return True
+            return lrc_text
+        return None
+    
+    def save_lrc(self, lrc_dir = None, lrc_text = None):
+        if lrc_dir is None:
+            lrc_dir = self.music_dir
+        if lrc_text is not None:
+            with open(os.path.join(lrc_dir, self.lrc_name), 'w', encoding='utf-8') as f:
+                f.write(lrc_text)
+            return True
         return False
+
 
 class LrcDownloaderNetease(LrcDownloader):
     def search(self):
@@ -131,6 +137,7 @@ class LrcDownloaderNetease(LrcDownloader):
                 singers.append(tmp if len(tmp) > 0 else '')
             best_index, best_name, best_score = self.get_best_index(singers=singers, songs=songs)
             self.best_name = best_name
+            self.best_name_score = best_score
             return ids[best_index]
         except:
             return None
@@ -175,6 +182,7 @@ class LrcDownloaderKugou(LrcDownloader):
                 singers.append(x['singername'])
             best_index, best_name, best_score = self.get_best_index(singers=singers, songs=songs)
             self.best_name = best_name
+            self.best_name_score = best_score
             return infos[best_index]
         except:
             return None
@@ -249,6 +257,7 @@ class LrcDownloaderQQ(LrcDownloader):
                 singers.append(tmp if len(tmp) > 0 else '')
             best_index, best_name, best_score = self.get_best_index(singers=singers, songs=songs)
             self.best_name = best_name
+            self.best_name_score = best_score
             return songmids[best_index]
         except:
             return None
@@ -274,26 +283,48 @@ class LrcDownloaderQQ(LrcDownloader):
             return None
 
 def download_lrc(music_file, only_search):
-    downloaders = [('酷狗', LrcDownloaderKugou), 
-                   ('QQ', LrcDownloaderQQ),
-                   ('网易', LrcDownloaderNetease)]
+    downloaders = {'酷狗': LrcDownloaderKugou, 
+                   'QQ': LrcDownloaderQQ,
+                   '网易': LrcDownloaderNetease}
     if os.path.exists(music_file):
-        for downloader_name, c in downloaders:
+        downloader_result = {}  # [name]: (is_succ, obj, lrc*)
+        for downloader_name, c in downloaders.items():
             ld = c(music_file)
             if only_search:
-                if ld.search() is not None:
-                    return downloader_name + '_s', ld.best_name
+                downloader_result[downloader_name] = (ld.search() is not None, ld, None)
             else:
-                if ld.download_lrc():
-                    return downloader_name, ld.best_name
-        return '\033[31m失败\033[0m', ''
+                lrc_text = ld.download_lrc()
+                downloader_result[downloader_name] = (lrc_text is not None, ld, lrc_text)
+        # get best lrc
+        best_downloader_name = None
+        best_score = 0
+        for downloader_name, r in downloader_result.items():
+            is_succ, ld, lrc = r
+            if is_succ and ld.best_name_score > best_score:
+                best_downloader_name = downloader_name
+                best_score = ld.best_name_score
+        if best_downloader_name is not None:
+            is_succ, ld, lrc = downloader_result[best_downloader_name]
+            if not only_search:
+                if not ld.save_lrc(lrc_dir=None, lrc_text=lrc):
+                    return '\033[31m保存失败\033[0m', ld.best_name, ld.best_name_score
+            else:
+                best_downloader_name += '_s'
+            return best_downloader_name, ld.best_name, ld.best_name_score
+        else:
+            return '\033[31m失败\033[0m', '', 0.
     else:
-        return '\033[31m无此文件\033[0m', ''
+        return '\033[31m无此文件\033[0m', '', 0.
 
 def main(music_dir = '.', 
          music_file = None,
          force = False, 
-         only_search = False):
+         only_search = False,
+         threads = None):
+    if threads is None:
+        threads = 2 * cpu_count()
+    else:
+        threads = int(threads)
     music_files = []
     if music_file is not None:
         if isinstance(music_file, str):
@@ -308,7 +339,7 @@ def main(music_dir = '.',
                     if force or not os.path.exists(os.path.join(root, file[:-len(file_suffix)] + '.lrc')):
                         music_file = os.path.join(root, file)
                         music_files.append(music_file)
-    rs = Parallel(n_jobs=2 * cpu_count(), prefer='threads', verbose=1)(
+    rs = Parallel(n_jobs=threads, prefer='threads', verbose=1)(
             delayed(download_lrc)(f, only_search)
             for f in music_files
         )
@@ -316,6 +347,7 @@ def main(music_dir = '.',
     tb.add_column('文件名', music_files, align='l')
     tb.add_column('状态', [i[0] for i in rs])
     tb.add_column('匹配名', [i[1] for i in rs], align='l')
+    tb.add_column('匹配度', [i[2] for i in rs], align='r')
     print(tb)
 
 if __name__ == '__main__':
