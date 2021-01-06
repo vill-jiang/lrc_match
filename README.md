@@ -55,6 +55,20 @@ richard clayderman - 水边的阿狄丽娜.mp3
 胡歌 - 逍遥叹.mp3
 ```
 
+### 依赖项
+requests==2.23.0    # http访问
+
+OpenCC==1.1.1       # 简繁转换
+
+fire==0.3.1         # 命令行参数
+
+joblib==0.17.0      # 并发包
+
+prettytable==2.0.0  # 表格输出
+
+fuzzywuzzy==0.18.0  # 模糊匹配
+
+
 网易云音乐使用 API: http://www.hjmin.com
 
 Root 项目: https://github.com/yedanten/DownloadLrcFromNKQ
