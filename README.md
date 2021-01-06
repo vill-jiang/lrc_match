@@ -17,6 +17,44 @@ FLAGS
     --only_search            # bool 仅搜索, 不保存lrc歌词文件
 ```
 
+### 示例
+
+```shell
+> ls
+Ace组合 - 青花引.mp3
+Glee Cast - Hey Jude.mp3
+lrc_match.py
+richard clayderman - 水边的阿狄丽娜.mp3
+伍佰 - 突然的自我.flac
+胡歌 - 逍遥叹.mp3
+
+> python.exe .\lrc_match.py
+[Parallel(n_jobs=24)]: Using backend ThreadingBackend with 24 concurrent workers.
+[Parallel(n_jobs=24)]: Done   5 out of   5 | elapsed:    0.9s finished
++-------------------------------------------+--------+------------------------------------------+--------+
+| 文件名                                    |  状态  | 匹配名                                   | 匹配度 |
++-------------------------------------------+--------+------------------------------------------+--------+
+| .\Ace组合 - 青花引.mp3                    | 酷狗 | Ace组合 - 青花引                         |  100.0 |
+| .\Glee Cast - Hey Jude.mp3                | 酷狗 | Glee Cast - Hey Jude (Glee Cast Version) |   83.5 |
+| .\richard clayderman - 水边的阿狄丽娜.mp3 | 网易 | Richard Clayderman - 水边的阿狄丽娜      |  100.0 |
+| .\伍佰 - 突然的自我.flac                  | 酷狗 | 伍佰 - 突然的自我 (Live)                 |   88.0 |
+| .\胡歌 - 逍遥叹.mp3                       | 酷狗 | 胡歌 - 逍遥叹                            |  100.0 |
++-------------------------------------------+--------+------------------------------------------+--------+
+
+> ls
+Ace组合 - 青花引.lrc
+Ace组合 - 青花引.mp3
+Glee Cast - Hey Jude.lrc
+Glee Cast - Hey Jude.mp3
+lrc_match.py
+richard clayderman - 水边的阿狄丽娜.lrc
+richard clayderman - 水边的阿狄丽娜.mp3
+伍佰 - 突然的自我.flac
+伍佰 - 突然的自我.lrc
+胡歌 - 逍遥叹.lrc
+胡歌 - 逍遥叹.mp3
+```
+
 网易云音乐使用 API: http://www.hjmin.com
 
 Root 项目: https://github.com/yedanten/DownloadLrcFromNKQ
