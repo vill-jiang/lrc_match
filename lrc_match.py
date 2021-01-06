@@ -16,6 +16,7 @@ from requests.adapters import HTTPAdapter
 from threading import Thread
 from typing import List, Union
 
+
 class LrcDownloader(object):
     format_list = ['.mp3', '.flac', '.ape', '.wav', '.m4a']
     headers = {
@@ -239,7 +240,8 @@ class LrcDownloaderQQ(LrcDownloader):
         r = s.get('https://c.y.qq.com/soso/fcgi-bin/client_search_cp', 
                   params={'w': self.base_name, 
                           'format': 'json',
-                          'n': 60}, 
+                          'n': 50,
+                          't': 0}, 
                   timeout=None, 
                   headers=LrcDownloader.headers)
         resp = r.json()
@@ -248,7 +250,7 @@ class LrcDownloaderQQ(LrcDownloader):
             songmids = []
             songs = []
             singers = []
-            for x in resp['data']['song']['list']:
+            for x in resp['data']['song']['list']:  # t=0 song, t=7 lyric
                 songmids.append(x['songmid'])
                 songs.append(x['songname'])
                 tmp = []
@@ -290,31 +292,32 @@ def download_lrc(music_file, only_search):
         downloader_result = {}  # [name]: (is_succ, obj, lrc*)
         for downloader_name, c in downloaders.items():
             ld = c(music_file)
-            if only_search:
-                downloader_result[downloader_name] = (ld.search() is not None, ld, None)
-            else:
-                lrc_text = ld.download_lrc()
-                downloader_result[downloader_name] = (lrc_text is not None, ld, lrc_text)
+            lrc_text = ld.download_lrc()
+            downloader_result[downloader_name] = (lrc_text is not None, ld, lrc_text)
         # get best lrc
         best_downloader_name = None
-        best_score = 0
+        best_score = -1.
         for downloader_name, r in downloader_result.items():
-            is_succ, ld, lrc = r
-            if is_succ and ld.best_name_score > best_score:
+            _, ld, __ = r
+            # print(downloader_name, _, ld.best_name, ld.best_name_score)
+            if ld.best_name_score > best_score:
                 best_downloader_name = downloader_name
                 best_score = ld.best_name_score
         if best_downloader_name is not None:
             is_succ, ld, lrc = downloader_result[best_downloader_name]
-            if not only_search:
-                if not ld.save_lrc(lrc_dir=None, lrc_text=lrc):
-                    return '\033[31m保存失败\033[0m', ld.best_name, ld.best_name_score
+            if not is_succ:
+                return '\033[32m无歌词\033[0m', best_downloader_name, ld.best_name, ld.best_name_score
+            if only_search:
+                status = '搜索'
             else:
-                best_downloader_name += '_s'
-            return best_downloader_name, ld.best_name, ld.best_name_score
+                if not ld.save_lrc(lrc_dir=None, lrc_text=lrc):
+                    return '\033[31m保存失败\033[0m', best_downloader_name, ld.best_name, ld.best_name_score
+                status = '下载'
+            return status, best_downloader_name, ld.best_name, ld.best_name_score
         else:
-            return '\033[31m失败\033[0m', '', 0.
+            return '\033[31m失败\033[0m', best_downloader_name, '', 0.
     else:
-        return '\033[31m无此文件\033[0m', '', 0.
+        return '\033[31m无此文件\033[0m', None, '', 0.
 
 def main(music_dir = '.', 
          music_file = None,
@@ -346,8 +349,9 @@ def main(music_dir = '.',
     tb = PrettyTable()
     tb.add_column('文件名', music_files, align='l')
     tb.add_column('状态', [i[0] for i in rs])
-    tb.add_column('匹配名', [i[1] for i in rs], align='l')
-    tb.add_column('匹配度', [i[2] for i in rs], align='r')
+    tb.add_column('源', [i[1] for i in rs])
+    tb.add_column('匹配名', [i[2] for i in rs], align='l')
+    tb.add_column('匹配度', [i[3] for i in rs], align='r')
     print(tb)
 
 if __name__ == '__main__':
