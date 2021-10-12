@@ -28,7 +28,7 @@ richard clayderman - 水边的阿狄丽娜.mp3
 伍佰 - 突然的自我.flac
 胡歌 - 逍遥叹.mp3
 
-> python.exe .\lrc_match.py
+> python ./lrc_match.py
 [Parallel(n_jobs=24)]: Using backend ThreadingBackend with 24 concurrent workers.
 [Parallel(n_jobs=24)]: Done   5 out of   5 | elapsed:    0.9s finished
 +-------------------------------------------+------+------+------------------------------------------+--------+
