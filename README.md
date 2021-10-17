@@ -3,6 +3,8 @@ Auto match .lrc lyrics for music file. KuGou > QQ > Netease.
 
 自动为音乐文件下载 .lrc 歌词. 优先级: 酷狗音乐 > QQ 音乐 > 网易云音乐.
 
+**网易云音乐API失效，本仓库不再使用网易云。**
+
 ```shell
 NAME
     lrc_match.py
