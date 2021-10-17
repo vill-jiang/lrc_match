@@ -118,12 +118,16 @@ class LrcDownloaderNetease(LrcDownloader):
         s = requests.Session()
         s.mount('http://', HTTPAdapter(max_retries=5))
         s.mount('https://', HTTPAdapter(max_retries=5))
-        req = s.get('http://www.hjmin.com/search', 
-                    params={'keywords': self.base_name,
-                            'limit': 100}, 
-                    headers=LrcDownloader.headers, 
-                    timeout=None)
-        resp = req.json()
+        resp = {}
+        try:
+            req = s.get('http://www.hjmin.com/search', 
+                        params={'keywords': self.base_name,
+                                'limit': 100}, 
+                        headers=LrcDownloader.headers, 
+                        timeout=None)
+            resp = req.json()
+        except:
+            return None
 
         try:
             ids = []
@@ -286,8 +290,8 @@ class LrcDownloaderQQ(LrcDownloader):
 
 def download_lrc(music_file, only_search):
     downloaders = {'酷狗': LrcDownloaderKugou, 
-                   'QQ': LrcDownloaderQQ,
-                   '网易': LrcDownloaderNetease}
+                   'QQ': LrcDownloaderQQ}
+    #    '网易': LrcDownloaderNetease
     if os.path.exists(music_file):
         downloader_result = {}  # [name]: (is_succ, obj, lrc*)
         for downloader_name, c in downloaders.items():
